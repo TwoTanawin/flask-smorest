@@ -1,61 +1,59 @@
+from flask import Flask, request
+from db import items, stores
+from flask_smorest import Blueprint, abort
 import uuid
 from flask.views import MethodView
-from flask_smorest import Blueprint, abort
 
-from schemas import ItemSchema, ItemUpdateSchema
-from db import items
-
-blp = Blueprint("Items", __name__, description="Operations on items")
-
+blp = Blueprint("items", __name__, description="Operations on items")
 
 @blp.route("/item/<string:item_id>")
 class Item(MethodView):
-    @blp.response(200, ItemSchema)
     def get(self, item_id):
         try:
             return items[item_id]
         except KeyError:
-            abort(404, message="Item not found.")
+            return {"message":"Item not found"}, 404
 
     def delete(self, item_id):
         try:
-            del items[item_id]
-            return {"message": "Item deleted."}
+            del items["item_id"]
+            return {"message":"Item delete"}
         except KeyError:
-            abort(404, message="Item not found.")
+            abort(400, message="Item not found")
 
-    @blp.arguments(ItemUpdateSchema)
-    @blp.response(200, ItemSchema)
-    def put(self, item_data, item_id):
+    def put(self, item_id):
+        item_data = request.get_json()
+        if "price" not in item_data or "name" not in item_data:
+            abort(
+                400,
+                message="Bad request. Ensure 'name' and 'price' are include in the Json payload")  
+        
         try:
-            item = items[item_id]
-
-            # https://blog.teclado.com/python-dictionary-merge-update-operators/
+            item = item_id["item_id"]
             item |= item_data
 
             return item
         except KeyError:
-            abort(404, message="Item not found.")
-
+            abort(400, message="Item not found")
 
 @blp.route("/item")
 class ItemList(MethodView):
-    @blp.response(200, ItemSchema(many=True))
     def get(self):
-        return items.values()
+        return {"items": list(items.values())}
 
-    @blp.arguments(ItemSchema)
-    @blp.response(201, ItemSchema)
-    def post(self, item_data):
+    def post(self):
+        item_data = request.json
+        if not item_data or "price" not in item_data or "store_id" not in item_data or "name" not in item_data:
+            abort(400, message="Bad request. Ensure 'price', 'store_id', and 'name' are included in the JSON payload")
+
         for item in items.values():
-            if (
-                item_data["name"] == item["name"]
-                and item_data["store_id"] == item["store_id"]
-            ):
-                abort(400, message=f"Item already exists.")
+            if item_data["name"] == item["name"] and item_data["store_id"] == item["store_id"]:
+                abort(400, message="Item already exists")
+
+        if item_data["store_id"] not in stores:
+            abort(404, message="Store not found")
 
         item_id = uuid.uuid4().hex
         item = {**item_data, "id": item_id}
         items[item_id] = item
-
-        return item
+        return item, 201
